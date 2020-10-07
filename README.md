@@ -1,4 +1,4 @@
-# Fenics
+# Fenics Incompressible Navier-Stokes
 This script solves the laminar flow with heat transfer problem in a square duct.
 It has SUPG / PSPG / LSIC stabilization implemented.
 It yields a Nusselt number of 4.88 compared to 7.1 in Shah & London, Laminar Flow Forced Convection in Ducts, 1978.
