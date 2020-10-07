@@ -1,11 +1,3 @@
-"""
-Fenics Incompressible Navier-Stokes
-This script solves the laminar flow with heat transfer problem in a square duct.
-It has SUPG / PSPG / LSIC stabilization implemented. 
-It yields a Nusselt number of 4.88 compared to 7.1 in Shah & London, Laminar Flow Forced Convection in Ducts, 1978. 
-This difference probably comes from the meshing of the square duct: a better meshing at the wall where the temperature gradient is calculated is probably needed.
-"""
-
 from dolfin import *
 from msh2xdmf import import_mesh_from_xdmf, msh2xdmf
 from ufl import Min
@@ -92,7 +84,8 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     F_SUPG = inner(tau_SUPG*res_strong, rho*dot(grad(v),u) + grad(q))*dx2 # Includes PSPG
     F = F + F_SUPG
     # LSIC/grad-div:
-    tau_LSIC = rho * 2*nu/3
+    #tau_LSIC = rho * 2*nu/3
+    tau_LSIC = h**2/tau_SUPG
     F_LSIC = tau_LSIC*div(u)*div(v)*dx2
     F = F + F_LSIC
     
