@@ -145,7 +145,8 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     htc = project(k*grad(T), VectorFunctionSpace(mesh, 'Lagrange', 1))
     Area = assemble(T/T*ds_bc(association_table["noslip"]))
     VP = FunctionSpace(mesh, 'P', 1)
-    Tm = boundary_values(np.array(T.vector()), VP, boundaries, association_table, "outlet").min()
+    Tmin = boundary_values(np.array(T.vector()), VP, boundaries, association_table, "outlet").min()
+    Tm = max(T_0+1e-3, Tmin)
     
     def DTm(T, T_0, Tm): # Log Mean Tempearature Difference is used to calculate Nu_m_T in Shah & London, Laminar Flow Forced Convection in Ducts,  1978
         return ((T - T_0) - (T - Tm)) / ln((T - T_0) / (T - Tm))
