@@ -68,7 +68,7 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     bcs = bcu + bcT
     
     # DEFINE WEAK VARIATIONAL FORM
-    """
+    
     F1 = (rho*inner(grad(u)*u, v)*dx +                 # Momentum ddvection term
         mu*inner(grad(u), grad(v))*dx -          # Momentum diffusion term
         inner(p, div(v))*dx +                    # Pressure term
@@ -78,8 +78,9 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
         k*inner(grad(T), grad(s))*dx # Energy diffusion term
     )
     F = F1 + F2
-    """
     
+    """
+    # STABILIZATION
     dx2 = dx(metadata={"quadrature_degree":2*3})
     
     F1 = (rho*inner(grad(u)*u, v)*dx2 +                 # Momentum advection term
@@ -92,7 +93,7 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     )
     F = F1 + F2
   
-    # SUPG / PSPG stabilization
+    # SUPG / PSPG
     sigma = 2.*mu*sym(grad(u)) - p*Identity(len(u))
     # Strong formulation:
     res_strong = rho*dot(u, grad(u)) - div(sigma)
@@ -118,7 +119,7 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     tau_E = h**2 * (rho*cp/k) / 1000.
     F_E = inner(tau_E*res_strong, rho*cp*dot(u,grad(s)))*dx2
     F = F + F_E
-     
+    """
     
     # Create VTK files for visualization output
     vtkfile_u = File('results/u.pvd')
@@ -147,50 +148,33 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     
     
     # POST-PROCESSING
-    
-    def boundary_values(var, FS, boundaries, association_table, bc):
-        
-        vs = list(set(sum((f.entities(0).tolist() for f in SubsetIterator(boundaries, association_table[bc])), [])))
-        # Get degrees of freedom associated to vertices (by indices)
-        v2d = vertex_to_dof_map(VP)
-        d = v2d[vs]
-        nd = VP.dim()
-        dim = mesh.geometry().dim()
-        coordinates = VP.tabulate_dof_coordinates()
-        coordinates.resize((nd, dim))
-        xyz = coordinates[d]
-        # Dof values
-        #bnd_val = np.array(var.vector())[d]
-        bnd_val = var[d]
-        
-        return bnd_val
-   
-   
+  
     ds_bc = ds(subdomain_data=boundaries)
     
-    T_in_avg = assemble(T*ds_bc(association_table["inlet"])) / (We * He)
-    T_out_avg = assemble(T*ds_bc(association_table["outlet"])) / (We * He)
+    U = sqrt(dot(u,u))
+    u_in_avg = assemble(U*ds_bc(association_table["inlet"])) / (We * He)
+    u_out_avg = assemble(U*ds_bc(association_table["outlet"])) / (We * He)
+    T_in_avg = assemble(U*T*ds_bc(association_table["inlet"])) / (u_in_avg * We * He)
+    T_out_avg = assemble(U*T*ds_bc(association_table["outlet"])) / (u_out_avg * We * He)
     DT_avg = T_out_avg - T_in_avg
-    Heat_Load = u_0 * We * He * rho * cp * DT_avg
+    Heat_Load = u_in_avg * We * He * rho * cp * DT_avg
     
-    htc = project(k*grad(T), VectorFunctionSpace(mesh, 'Lagrange', 1))
+    print('==============================')
+    print('u in avg:', u_in_avg)
+    print('u out avg:', u_out_avg)
+    print('T in avg:', T_in_avg)
+    print('T out avg:', T_out_avg)
+    print('DT avg:', DT_avg)
+    print('==============================')
+    
     Area = assemble(T/T*ds_bc(association_table["noslip"]))
-    VP = FunctionSpace(mesh, 'P', 1)
-    Tmin = boundary_values(np.array(T.vector()), VP, boundaries, association_table, "outlet").min()
-    Tm = max(T_0+1e-3, Tmin)
-    
-    def DTm(T, T_0, Tm): # Log Mean Tempearature Difference is used to calculate Nu_m_T in Shah & London, Laminar Flow Forced Convection in Ducts,  1978
-        return ((T - T_0) - (T - Tm)) / ln((T - T_0) / (T - Tm))
-    
-    htc_avg = assemble(dot(n, htc)/DTm(T,T_0,Tm)*ds_bc(association_table["noslip"])) / Area
+    LMDT = ((Tw - T_out_avg) - (Tw - T_in_avg)) / ln((Tw - T_out_avg) / (Tw - T_in_avg))   
+    htc_avg = assemble(dot(k*grad(T), n)*ds_bc(association_table["noslip"])) / Area / LMDT
     Nu = htc_avg * Dh / k
-    Heat_Load = u_0 * We * He * rho * cp * DT_avg
-    
     print('Heat_Load:', Heat_Load)
     print("htc_avg = ", htc_avg)
     print("Nu = ", Nu)
-    
-    LMDT = assemble(DTm(T,T_0,Tm)*ds_bc(association_table["noslip"])) / Area
+
     htc_avg = Heat_Load / (Area * LMDT)
     Nu = htc_avg * Dh / k
     print("LMDT = ", LMDT)
