@@ -62,12 +62,23 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     
     # ENERGY
     bcT_inflow = DirichletBC(W.sub(2), Constant(T_0), boundaries, association_table["inlet"])
-    bcT_noslip = DirichletBC(W.sub(2), Constant(T_0+10.), boundaries, association_table["noslip"])
+    bcT_noslip = DirichletBC(W.sub(2), Constant(Tw), boundaries, association_table["noslip"])
     bcT = [bcT_inflow, bcT_noslip]
     
     bcs = bcu + bcT
     
     # DEFINE WEAK VARIATIONAL FORM
+    """
+    F1 = (rho*inner(grad(u)*u, v)*dx +                 # Momentum ddvection term
+        mu*inner(grad(u), grad(v))*dx -          # Momentum diffusion term
+        inner(p, div(v))*dx +                    # Pressure term
+        div(u)*q*dx                            # Divergence term
+    ) 
+    F2 = (rho*cp*inner(dot(grad(T), u), s)*dx + # Energy advection term
+        k*inner(grad(T), grad(s))*dx # Energy diffusion term
+    )
+    F = F1 + F2
+    """
     
     dx2 = dx(metadata={"quadrature_degree":2*3})
     
@@ -79,7 +90,6 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     F2 = (k*inner(grad(T), grad(s))*dx2 + # Energy advection term
         rho*cp*inner(dot(grad(T), u), s)*dx2 # Energy diffusion term
     )
-    
     F = F1 + F2
   
     # SUPG / PSPG stabilization
@@ -89,13 +99,26 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     Cinv = Constant(16*Re) # --> 16*Re is rather high, but solver diverges for lower values
     vnorm = sqrt(dot(u, u))
     tau_SUPG = Min(h**2/(Cinv*nu), h/(2.*vnorm))
-    F_SUPG = inner(tau_SUPG*res_strong, rho*dot(grad(v),u) + grad(q))*dx2 # Includes PSPG
+    F_SUPG = inner(tau_SUPG*res_strong, rho*dot(grad(v),u))*dx2 # Includes PSPG
     F = F + F_SUPG
+    
     # LSIC/grad-div:
     #tau_LSIC = rho * 2*nu/3
     tau_LSIC = h**2/tau_SUPG
     F_LSIC = tau_LSIC*div(u)*div(v)*dx2
     F = F + F_LSIC
+    
+    # Energy stabilization
+    # Strong formulation:
+    res_strong = rho*cp*dot(u, grad(T)) - k*div(grad(T))
+    #vnorm = sqrt(dot(u, u))
+    #Cinv = Constant(16*2**2)
+    #Cinv = Constant(16*Re)
+    #tau_E = Min(h**2/(Cinv*nu), h/(2.*vnorm))
+    tau_E = h**2 * (rho*cp/k) / 1000.
+    F_E = inner(tau_E*res_strong, rho*cp*dot(u,grad(s)))*dx2
+    F = F + F_E
+     
     
     # Create VTK files for visualization output
     vtkfile_u = File('results/u.pvd')
@@ -167,6 +190,13 @@ def sim_flow(u_0, nu, cp, k, p_0, T_0, fileName, Le, He, We):
     print("htc_avg = ", htc_avg)
     print("Nu = ", Nu)
     
+    LMDT = assemble(DTm(T,T_0,Tm)*ds_bc(association_table["noslip"])) / Area
+    htc_avg = Heat_Load / (Area * LMDT)
+    Nu = htc_avg * Dh / k
+    print("LMDT = ", LMDT)
+    print("htc_avg = ", htc_avg)
+    print("Nu = ", Nu)
+    
     return Nu
 
 
@@ -182,10 +212,11 @@ cp = 1008. # air heat capacity @ 40°C (J/kg K)
 k = 27.35e-3 # air thermal conductivity @40°C (W/m/K) 
 p_0 = 0. # outlet air pressure (atmospheric pressure), normalized
 T_0 = 0. # Inlet temperature (K) 
+Tw = T_0 + 10.
     
 fileName = "SquareDuct"
 
-u_0 = 5.67*2 # Inlet velocity (m/s)
+u_0 = 5.67 #*2 # Inlet velocity (m/s)
 Re  = u_0 * Dh / nu
 print("Dh = ", Dh)
 print("Re = ", Re)
